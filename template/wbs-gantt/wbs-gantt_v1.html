@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WBS-Gantt — 学習プロジェクト</title>
+<!--
+  WBS-Gantt v1 — 学習プロジェクト汎用テンプレート
+
+  設計原則（E資格プロジェクト 16週間の実績にもとづく / 変えないこと）:
+   1. 静的レイヤ(不変): 横棒 s/d は「発行時のベースライン」。着手後に伸縮させない。
+      リプランが要るときは書き換えず v2 へフォークし、旧版は凍結して残す。
+      → 遅れは「棒の後端 − 今日」として自動的に見える。棒を伸ばすと遅れが消えてしまう。
+   2. 動的レイヤ: バー塗り(実績%) + イナズマ線(遅延) + コメントログ。
+   3. 進捗を項目名に書かない。線とバーの塗りで判断する。
+   4. ★このページが「人間が見る唯一の画面」。STATUS や進捗ログは AI 側の内部状態であり、
+      人が読む前提で設計しない。数字も信号も、全部ここに載せる。
+
+  更新するのは CONFIG ブロック(TODAY 等) / 各タスクの st・pct / COMMENTS だけ。
+  今日線ラベル・KPI の経過・遅延日数は TODAY から自動算出されるので手編集不要。
+  構造・JS・CSS は触らない。
+
+  PNG 化: render-gantt-png.ps1 を絶対パスで実行（PostToolUse フックでも自動発火）。
+-->
+<style>
+  /* ライト基調。ダークは data-theme="dark" 明示時のみ */
+  :root{
+    --bg:#eef1f6; --panel:#ffffff; --panel-2:#f6f8fc; --nested:#eaeef6;
+    --ink:#1a2130; --muted:#5b6472; --faint:#8b95a5; --line:#e2e6ee;
+    --accent:#3f5bd8;
+    --done:#0d9488; --active:#3f5bd8; --active-bg:#dfe4fb; --future:#cbd3e0;
+    --crit:#7c3aed; --crit-bg:#ede9fe;
+    --ok:#16a34a; --warn:#c2790a; --bad:#dc2626;
+    --today:#475569; --bolt:#e11d48;
+    --ok-bg:#dcfce7; --warn-bg:#fbeccb; --bad-bg:#fde0e0;
+    --radius:14px;
+    --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:system-ui,"Segoe UI","Yu Gothic UI","Noto Sans JP",sans-serif;
+    --shadow:0 14px 32px -26px rgba(20,24,40,.5);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e131b; --panel:#161d28; --panel-2:#1b2431; --nested:#111925;
+    --ink:#e6ebf3; --muted:#9aa6b6; --faint:#61708a; --line:#273140;
+    --accent:#6f86ff;
+    --done:#2dd4bf; --active:#7d92ff; --active-bg:#26314b; --future:#3a4657;
+    --crit:#a78bfa; --crit-bg:#2e2650;
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    --today:#94a3b8; --bolt:#fb7185;
+    --ok-bg:#123524; --warn-bg:#3a2f12; --bad-bg:#3a1e1e;
+    --shadow:0 14px 32px -24px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;padding:clamp(14px,2.4vw,32px);background:var(--bg);color:var(--ink);
+       font-family:var(--sans);line-height:1.45;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  header.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-bottom:6px}
+  header.top h1{font-size:clamp(1.15rem,1rem+1vw,1.5rem);margin:0;letter-spacing:-.02em}
+  header.top .tag{font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+       color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:.18em .7em;vertical-align:middle;margin-left:.5em}
+  header.top .updated{color:var(--muted);font-size:.76rem;font-family:var(--mono)}
+  header.top .sub{flex-basis:100%;color:var(--muted);font-size:.82rem;margin-top:2px}
+
+  /* KPI summary */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));gap:12px;margin:16px 0 16px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+       padding:12px 15px 13px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+  .kpi.k-ok::before{background:var(--ok)} .kpi.k-warn::before{background:var(--warn)} .kpi.k-bad::before{background:var(--bad)}
+  .kpi .k-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+  .kpi .k-val{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.2;margin-top:2px}
+  .kpi .k-val small{font-size:.74rem;font-weight:500;color:var(--muted)}
+  .kpi .k-note{font-size:.72rem;color:var(--muted);margin-top:3px}
+
+  .pill{display:inline-flex;align-items:center;gap:.3em;padding:.16em .66em;border-radius:999px;
+        font-size:.76rem;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)}
+  .pill.warn{background:var(--warn-bg);color:var(--warn)}
+  .pill.bad{background:var(--bad-bg);color:var(--bad)}
+
+  /* cards & collapsibles */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
+  details{border:none}
+  summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+          padding:clamp(12px,1.6vw,16px) clamp(14px,2vw,20px);user-select:none}
+  summary::-webkit-details-marker{display:none}
+  summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:var(--radius)}
+  .caret{margin-left:auto;color:var(--faint);font-size:.9rem;transition:transform .18s ease;flex:none}
+  details[open] .caret{transform:rotate(90deg)}
+  @media (prefers-reduced-motion:reduce){.caret{transition:none}}
+
+  /* axis card */
+  .axis{border-left:3px solid var(--line)}
+  .axis[data-status="ok"]{border-left-color:var(--ok)}
+  .axis[data-status="warn"]{border-left-color:var(--warn)}
+  .axis[data-status="bad"]{border-left-color:var(--bad)}
+  .axis summary .ax-name{font-size:1rem;font-weight:700;letter-spacing:-.01em}
+  .axis summary .ax-meta{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .axis-body{padding:0 clamp(14px,2vw,20px) 12px}
+  svg.gantt{display:block;width:100%;height:auto;font-family:var(--sans)}
+
+  /* how-to / legend */
+  .howto summary .h-title{font-weight:700;font-size:.92rem}
+  .howto summary .h-hint{font-size:.75rem;color:var(--muted)}
+  .howto-body{padding:0 clamp(14px,2vw,20px) 16px;color:var(--muted);font-size:.83rem}
+  .howto-body p{margin:.2em 0 12px}
+  .howto-body b{color:var(--ink)}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.76rem}
+  .legend b{display:inline-flex;align-items:center;gap:6px;font-weight:500;color:var(--ink)}
+  .sw{width:16px;height:9px;border-radius:3px;display:inline-block;flex:none}
+
+  /* comment log */
+  .log summary .l-title{font-weight:700;font-size:.92rem}
+  .log summary .l-hint{font-size:.75rem;color:var(--muted)}
+  .clist{padding:0 clamp(14px,2vw,20px) 12px}
+  .cmt{border-top:1px solid var(--line);padding:12px 0}
+  .cmt:first-child{border-top:none}
+  .cmt .c-head{display:flex;align-items:center;gap:9px;margin-bottom:4px}
+  .cmt .c-date{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--accent)}
+  .cmt .c-tag{font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+              color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:.1em .55em}
+  .cmt p{margin:0;font-size:.85rem;color:var(--ink)}
+  .cmt.old p{color:var(--muted)}
+  details.oldwrap summary{padding:10px clamp(14px,2vw,20px)}
+  details.oldwrap summary .o-title{font-size:.8rem;color:var(--muted);font-weight:600}
+
+  .foot{font-size:.72rem;color:var(--faint);margin-top:8px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>WBS-Gantt <span id="ver"></span><span class="tag" id="ptag"></span></h1>
+    <span class="updated" id="updated"></span>
+    <p class="sub" id="subtitle"></p>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <details class="card howto">
+    <summary>
+      <span class="h-title">読み方</span>
+      <span class="h-hint">凡例と進捗線の見方（クリックで開閉）</span>
+      <span class="caret">▸</span>
+    </summary>
+    <div class="howto-body">
+      <p>横棒＝<b>発行時のベースライン(以後不変)</b>。着手後も伸縮させません。青の塗り＝進行中タスクの<b>実績%</b>。
+         赤い折れ線＝<b>イナズマ線</b>で、各行の進捗点を<b>今日線</b>から左右に振ります。
+         遅延は<b>「棒の後端(期限) − 今日」</b>で算出し、<b>期限内のタスクは遅れ0</b>（今日線上）。
+         期限を過ぎても未完了なら、その超過日数だけ<b>左へ折れ</b>ます。</p>
+      <p>さらにリプランが必要な場合は<b>この予定線は書き換えず</b>、別ページ(v2, v3, …)にフォークして引き直します。
+         旧バージョンは同じフォルダに<b>凍結保管</b>し、編集しません。
+         下部の<b>コメントログ</b>に日付単位で所見を追記していきます。</p>
+      <div class="legend">
+        <b><span class="sw" style="background:var(--done)"></span>完了</b>
+        <b><span class="sw" style="background:var(--active)"></span>進行中(実績%)</b>
+        <b><span class="sw" style="background:var(--future)"></span>予定</b>
+        <b><span class="sw" style="background:var(--crit-bg);border:1px solid var(--crit)"></span>予定(クリティカル)</b>
+        <b><span class="sw" style="width:12px;height:12px;background:var(--crit);transform:rotate(45deg);border-radius:2px"></span>マイルストーン</b>
+        <b><span class="sw" style="width:3px;height:14px;background:var(--today)"></span>今日線</b>
+        <b><span class="sw" style="width:18px;height:3px;background:var(--bolt)"></span>イナズマ線</b>
+        <b><span class="sw" style="width:11px;height:11px;border-radius:50%;background:var(--bolt)"></span>遅れ(棒後端基準)</b>
+      </div>
+    </div>
+  </details>
+
+  <div id="panels"></div>
+
+  <section class="card log">
+    <details open>
+      <summary>
+        <span class="l-title">コメントログ</span>
+        <span class="l-hint">日付単位の所見（最新を上に追記）</span>
+        <span class="caret">▸</span>
+      </summary>
+      <div class="clist" id="clist"></div>
+    </details>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+/* ===== 更新はここ(TODAY)と 各タスクの st/pct / COMMENTS のみ ===== */
+/* ベースライン(s,d)は発行時に確定させ、以後は伸縮させない。次のリプランは次バージョンへフォークする。 */
+/* ============================================================
+   CONFIG — 編集するのはこのブロックと、下の SECTIONS / COMMENTS だけ
+   ============================================================ */
+const PROJECT   = "◯◯試験 対策";        // ページ見出しに出るプロジェクト名
+const VERSION   = "v1";                   // リプランするたび v2, v3 … へフォーク
+const BASELINE  = "当初計画 (2026-01-01 策定・不変)";  // このページの予定線が何か
+const GOAL_LABEL= "本番まで";             // KPI の1枚目のラベル
+const GOAL_NOTE = "";                     // 本番日の補足 (会場・開始時刻など)
+const VERDICT_NOTE = "";                  // 総合判定の下に出す注記
+
+const START = "2026-01-01";   // 学習開始日 (不変)
+const GOAL  = "2026-04-01";   // 本番日 / 締切日 (不変)
+const TODAY = "2026-01-01";   // ★更新のたびにここを書き換える
+
+const SECTIONS=[
+ /* 書式: {n:表示名, s:"開始日", d:日数, st:"done|active|future",
+           pct:0〜1(進行中の実績), crit:true(クリティカル), ms:true(マイルストーン),
+           tip:"ホバーで出る補足"} */
+
+ {name:"Phase 0 初日ゲート", note:"★ここが埋まるまで教材生産に進まない (docs/02_初日ゲート.md)", tasks:[
+   {n:"出題範囲の一次資料を確保",     s:"2026-01-01", d:1, st:"future", crit:true,
+    tip:"公式シラバス・出題範囲表。E資格ではこれを前日にやって、本番で新規範囲を10問落とした"},
+   {n:"範囲を機械可読な目次にする",   s:"2026-01-01", d:1, st:"future", crit:true,
+    tip:"教材の目次も同時に。E資格では教材の目次を作るのに開始から2か月かかった"},
+   {n:"プレテストで現在地を測る",     s:"2026-01-02", d:1, st:"future", crit:true,
+    tip:"20〜30問でよい。確信度つきで台帳に入れる。ここが全ての優先順位の根拠になる"},
+   {n:"初日ゲート通過",               s:"2026-01-02", d:0, st:"future", ms:true},
+ ]},
+
+ {name:"Phase 1 インプット", note:"プレテストの結果で順序を決める。弱い順に並べる", tasks:[
+   {n:"領域A 教材化",   s:"2026-01-03", d:14, st:"future"},
+   {n:"領域B 教材化",   s:"2026-01-17", d:14, st:"future"},
+ ]},
+
+ {name:"Phase 2 演習 (台帳)", note:"1問目から確信度を取る。ledger/README.md 参照", tasks:[
+   {n:"1周目 全問",             s:"2026-01-31", d:21, st:"future", crit:true},
+   {n:"中間ゲート (機械判定)",  s:"2026-02-20", d:0,  st:"future", ms:true,
+    tip:"到達数が閾値に届かなければ、その場で範囲を縮退する。判断を先送りしない"},
+   {n:"2周目 誤答+たまたま正解", s:"2026-02-21", d:14, st:"future", crit:true},
+ ]},
+
+ {name:"Phase 3 仕上げ", note:"★弱い順に処理する。時間切れで落ちるのが最強分野になるように", tasks:[
+   {n:"通し演習 (初見の実力測定)", s:"2026-03-07", d:2,  st:"future", crit:true,
+    tip:"既出問題の正答率は実力ではない。初見で測れる機会を必ず本番の3週間前までに置く"},
+   {n:"想起テスト (recall-drill)", s:"2026-03-09", d:14, st:"future"},
+   {n:"直前圧縮 (台帳から自動生成)", s:"2026-03-30", d:2, st:"future"},
+   {n:"本番",                      s:"2026-04-01", d:0,  st:"future", ms:true},
+ ]},
+];
+
+const COMMENTS=[
+ {date:"1/1", tag:"プロジェクト開始 — 初日ゲートから", latest:true,
+  body:"[雛形] このログには日付単位の所見を、最新を上にして追記していく。書く内容は "
+      +"①何が進んだか(数字) ②信号の変化とその理由 ③次のゲートまでに要るペース ④判断が要る論点。"
+      +"文章量よりも、後から読んで『そのとき何を根拠に決めたか』が復元できることを優先する。"},
+];
+
+/* ===== 幾何・ユーティリティ ===== */
+const D=s=>new Date(s+"T00:00:00");
+const dayOf=s=>Math.round((D(s)-D(START))/864e5);
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const md=dn=>{const dt=new Date(D(START).getTime()+dn*864e5);return (dt.getMonth()+1)+"/"+dt.getDate();};
+const todayLabel=(D(TODAY).getMonth()+1)+"/"+D(TODAY).getDate();
+
+const C={done:"var(--done)",active:"var(--active)",activeBg:"var(--active-bg)",future:"var(--future)",
+         crit:"var(--crit)",critBg:"var(--crit-bg)",today:"var(--today)",bolt:"var(--bolt)",
+         ink:"var(--ink)",muted:"var(--muted)",faint:"var(--faint)",line:"var(--line)",
+         stripe:"var(--panel-2)",cut:"var(--panel)"};
+
+const TOTAL=dayOf(GOAL), TODD=dayOf(TODAY);
+const VW=1120, GUT=252, X0=GUT+8, X1=1104, PW=X1-X0, pxD=PW/TOTAL;
+const xAt=dn=>X0+dn*pxD;
+const AXH=40, ROW_H=26, BAR_H=12;
+const T=(tag,a,inner="")=>`<${tag} ${Object.entries(a).map(([k,v])=>`${k}="${v}"`).join(" ")}>${inner}</${tag}>`;
+
+/* 遅延(日) = 棒の後端(期限)を今日が過ぎ、かつ未完了なら超過日数。期限内/完了は0 */
+function lateDays(t){
+  if(t.st==="done") return 0;
+  const endD=dayOf(t.s)+t.d;
+  return Math.max(0, TODD-endD);
+}
+function tooltip(t){
+  const end=dayOf(t.s)+t.d, span=t.ms?md(dayOf(t.s)):`${md(dayOf(t.s))}〜${md(end)}`;
+  const stTxt=t.st==="done"?"完了":t.st==="active"?`進行中 ${Math.round((t.pct||0)*100)}%`:"予定";
+  const late=lateDays(t), lateTxt=late>0?` / 遅れ ${late}日`:"";
+  return esc(`${t.n} | ${span} | ${stTxt}${t.tip?" ("+t.tip+")":""}${lateTxt}`);
+}
+
+/* 1軸パネルを自己完結SVGとして描画 */
+function renderAxis(sec){
+  const tX=xAt(TODD);
+  const vh=AXH + sec.tasks.length*ROW_H + 12;
+  let s="";
+  /* 週グリッド + W/月ラベル */
+  for(let w=0;w<=16;w++){
+    const gx=xAt(w*7);
+    s+=T("line",{x1:gx,y1:AXH-6,x2:gx,y2:vh-6,stroke:C.line,"stroke-width":1});
+    if(w<16) s+=T("text",{x:xAt(w*7+3.5),y:AXH-13,"text-anchor":"middle","font-size":10.5,fill:C.faint,"font-family":"var(--mono)"},"W"+(w+1));
+  }
+  [["2026-05-10","5月"],["2026-06-01","6月"],["2026-07-01","7月"],["2026-08-01","8月"]].forEach(([d,l])=>{
+    s+=T("text",{x:xAt(dayOf(d))+2,y:16,"font-size":12,"font-weight":700,fill:C.muted},l);
+  });
+  /* 今日線 (ラベルは線の右側に寄せて月ラベルとの衝突を回避) */
+  s+=T("line",{x1:tX,y1:AXH-8,x2:tX,y2:vh-6,stroke:C.today,"stroke-width":2,"stroke-dasharray":"4 3"});
+  s+=T("text",{x:tX+5,y:15,"text-anchor":"start","font-size":11,"font-weight":700,fill:C.today},"今日 "+todayLabel);
+
+  let pts=[], marks=[];
+  sec.tasks.forEach((t,i)=>{
+    const y=AXH+i*ROW_H, cy=y+ROW_H/2, sD=dayOf(t.s), eD=sD+t.d;
+    if(i%2===1) s+=T("rect",{x:0,y:y,width:VW,height:ROW_H,fill:C.stripe});
+    s+=T("text",{x:14,y:cy+4.4,"font-size":13.5,fill:t.st==="future"?C.muted:C.ink},esc(t.n));
+
+    /* バー / マイルストーン / 点タスク */
+    if(t.ms){
+      const mx=xAt(sD), hw=7;
+      const col=t.exam?C.crit:(t.st==="done"?C.done:C.future);
+      s+=T("path",{d:`M${mx} ${cy-hw} L${mx+hw} ${cy} L${mx} ${cy+hw} L${mx-hw} ${cy} Z`,fill:col,stroke:C.cut,"stroke-width":1.2});
+    }else if(t.d<=1){ /* 1日タスクは小菱形で判別性を確保 */
+      const mx=xAt(sD), hw=5.5, col=t.st==="done"?C.done:(t.crit?C.crit:C.future);
+      s+=T("path",{d:`M${mx} ${cy-hw} L${mx+hw} ${cy} L${mx} ${cy+hw} L${mx-hw} ${cy} Z`,
+                   fill:t.crit&&t.st!=="done"?C.critBg:col,stroke:t.crit&&t.st!=="done"?C.crit:C.cut,"stroke-width":1.1});
+    }else{
+      const bx=xAt(sD), bw=Math.max((eD-sD)*pxD,3), yb=cy-BAR_H/2;
+      if(t.st==="done"){
+        s+=T("rect",{x:bx,y:yb,width:bw,height:BAR_H,rx:5,fill:C.done});
+      }else if(t.st==="active"){
+        s+=T("rect",{x:bx,y:yb,width:bw,height:BAR_H,rx:5,fill:C.activeBg,stroke:"var(--active)","stroke-width":1,opacity:.9});
+        s+=T("rect",{x:bx,y:yb,width:Math.max(bw*(t.pct||0),2),height:BAR_H,rx:5,fill:C.active});
+        s+=T("text",{x:bx+bw+9,y:cy+4.2,"font-size":11.5,fill:C.active,"font-weight":700},Math.round((t.pct||0)*100)+"%");
+      }else{
+        s+=T("rect",{x:bx,y:yb,width:bw,height:BAR_H,rx:5,fill:t.crit?C.critBg:C.future,
+                     stroke:t.crit?C.crit:"none","stroke-width":t.crit?1:0});
+      }
+    }
+
+    /* イナズマ点: 今日 − 遅延日 の位置。遅延0なら今日線上 */
+    const late=lateDays(t);
+    const px=clamp(xAt(TODD-late), X0, X1);
+    pts.push(`${px.toFixed(1)},${cy.toFixed(1)}`);
+    if(late>0) marks.push({x:px,y:cy,late});
+
+    /* 行ホバー用ツールチップ(透明) */
+    s+=T("rect",{x:0,y:y,width:VW,height:ROW_H,fill:"transparent"}, T("title",{},tooltip(t)));
+  });
+
+  /* イナズマ折れ線(この軸のみ) */
+  s+=T("polyline",{points:pts.join(" "),fill:"none",stroke:C.bolt,"stroke-width":2,"stroke-linejoin":"round",opacity:.92});
+  pts.forEach(p=>{const[px,py]=p.split(",");s+=T("circle",{cx:px,cy:py,r:1.7,fill:C.bolt,opacity:.5});});
+  marks.forEach(m=>{
+    /* ラベルは点の真上に置き、バー塗り/実績%との重なりを避ける */
+    s+=T("circle",{cx:m.x,cy:m.y,r:5,fill:C.bolt,stroke:C.cut,"stroke-width":1.5});
+    s+=T("text",{x:m.x,y:m.y-8,"text-anchor":"middle","font-size":10.5,"font-weight":700,fill:C.bolt},"遅れ"+m.late+"d");
+  });
+  return {svg:s,vh};
+}
+
+/* 軸ステータス */
+function axisStat(sec){
+  if(sec.tasks.every(t=>t.st==="done")) return {txt:"✅ 完了・クローズ",cls:"ok",worst:0};
+  let worst=0; sec.tasks.forEach(t=>worst=Math.max(worst,lateDays(t)));
+  if(worst>=14) return {txt:`🔴 最大 ${worst}日 遅れ`,cls:"bad",worst};
+  if(worst>=1)  return {txt:`🟠 最大 ${worst}日 遅れ`,cls:"warn",worst};
+  return {txt:"🟢 オンスケ",cls:"ok",worst};
+}
+
+/* ===== パネル生成 ===== */
+let panelsHTML="", overallWorst=0;
+SECTIONS.forEach(sec=>{
+  const {svg,vh}=renderAxis(sec);
+  const st=axisStat(sec);
+  overallWorst=Math.max(overallWorst,st.worst);
+  const done=sec.tasks.filter(t=>t.st==="done").length, total=sec.tasks.length;
+  const allDone=done===total;
+  panelsHTML+=`<section class="card axis" data-status="${st.cls}">
+    <details${allDone?"":" open"}>
+      <summary>
+        <span class="ax-name">${esc(sec.name)}</span>
+        <span class="ax-meta">完了 ${done}/${total}${sec.note?" ・"+esc(sec.note):""}</span>
+        <span class="pill ${st.cls}">${st.txt}</span>
+        <span class="caret">▸</span>
+      </summary>
+      <div class="axis-body">
+        <svg class="gantt" viewBox="0 0 ${VW} ${vh}" role="img" aria-label="${esc(sec.name)} ガント">${svg}</svg>
+      </div>
+    </details>
+  </section>`;
+});
+document.getElementById("panels").innerHTML=panelsHTML;
+
+/* ===== KPI ===== */
+const remain=Math.round((D(GOAL)-D(TODAY))/864e5);
+const wk=Math.floor(TODD/7)+1;
+const calPct=Math.round(TODD/TOTAL*100);
+const worstW=(overallWorst/7).toFixed(1);
+const verdict=overallWorst>=21?{t:"🔴 要リプラン検討",c:"bad"}:overallWorst>=7?{t:"🟠 要フォロー",c:"warn"}:{t:"🟢 オンスケ",c:"ok"};
+const kLateCls=overallWorst>=14?"k-bad":overallWorst>=1?"k-warn":"k-ok";
+document.getElementById("updated").textContent="最終更新 "+TODAY;
+document.getElementById("ver").textContent=VERSION;
+document.getElementById("ptag").textContent=PROJECT;
+document.getElementById("subtitle").innerHTML=`ベースライン=<b>${BASELINE}</b>に対する実績イナズマ線。`;
+document.getElementById("kpis").innerHTML=`
+ <div class="kpi k-ok"><div class="k-label">${GOAL_LABEL}</div><div class="k-val">${remain}<small> 日</small></div><div class="k-note">${GOAL}${GOAL_NOTE}</div></div>
+ <div class="kpi"><div class="k-label">経過</div><div class="k-val">W${wk}<small> / ${Math.ceil(TOTAL/7)}</small></div><div class="k-note">カレンダー ${calPct}% 消化</div></div>
+ <div class="kpi ${kLateCls}"><div class="k-label">最大の遅れ</div><div class="k-val">${overallWorst}<small> 日</small></div><div class="k-note">ベースライン比 (≈${worstW}週)</div></div>
+ <div class="kpi ${verdict.c==="bad"?"k-bad":verdict.c==="warn"?"k-warn":"k-ok"}"><div class="k-label">総合判定</div><div class="k-val"><span class="pill ${verdict.c}">${verdict.t}</span></div><div class="k-note">${VERDICT_NOTE}</div></div>`;
+
+/* ===== コメントログ ===== */
+const latest=COMMENTS.filter(c=>c.latest), older=COMMENTS.filter(c=>!c.latest);
+const cmtHTML=c=>`<div class="cmt${c.latest?"":" old"}">
+    <div class="c-head"><span class="c-date">${esc(c.date)}</span><span class="c-tag">${esc(c.tag)}</span></div>
+    <p>${esc(c.body)}</p></div>`;
+let logHTML=latest.map(cmtHTML).join("");
+if(older.length){
+  logHTML+=`<details class="oldwrap"><summary><span class="o-title">過去のコメント (${older.length}件)</span><span class="caret">▸</span></summary>
+    <div>${older.map(cmtHTML).join("")}</div></details>`;
+}
+document.getElementById("clist").innerHTML=logHTML;
+
+document.getElementById("foot").textContent=`ベースライン=${BASELINE}・発行後不変。次のリプランは次バージョンへフォークし、`+"旧版は同フォルダに凍結して残す。更新は CONFIG の TODAY / 各タスク st・pct / COMMENTS のみ。";
+</script>
+</body>
+</html>
