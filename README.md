@@ -92,9 +92,12 @@ E資格の最大の失敗はここでした。
 │   ├── STATUS.md                 状態の圧縮スナップショット（AI 用）
 │   ├── THIS-WEEK.md              今週やること（人間用・週単位）
 │   ├── .gitignore
+│   ├── docs/範囲と教材.md         初日ゲート1・2の出力先
+│   ├── materials/                教材の置き場所（4種類の役割は README に）
 │   ├── ledger/                   ★演習台帳（4象限・間隔反復）
 │   │   ├── tally.py               集計スクリプト
 │   │   ├── questions.tsv          問題マスタ
+│   │   ├── rounds/round0/         プレテスト（初日ゲート3）
 │   │   ├── rounds/                解答ノート（人が触る唯一の記録先）
 │   │   └── recall-log.tsv         想起テストの正答率
 │   ├── wbs-gantt/                ★唯一の人間向け画面
@@ -108,6 +111,7 @@ E資格の最大の失敗はここでした。
     ├── study-init/               立ち上げ・初日ゲート
     ├── study-review/             進捗レビュー・信号判定
     ├── study-replan/             リプラン（発火条件つき）
+    ├── study-material/           教材生成（解釈ノート/一問一答/要点/最終メモ）
     ├── drill-ledger/             台帳の作成・集計
     └── recall-drill/             想起テスト（弱点優先・間隔反復）
 ```

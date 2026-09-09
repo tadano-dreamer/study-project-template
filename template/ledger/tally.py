@@ -478,7 +478,8 @@ def main():
     if args.compare:
         compare(args.compare[0], args.compare[1], questions)
         return
-    n = args.round or rounds[-1]
+    # 注意: --round 0 (プレテスト) は 0 が偽値なので `or` で書くと最新周回に落ちる。
+    n = args.round if args.round is not None else rounds[-1]
     if args.next:
         next_queue(n, questions, limit=args.next)
         return
