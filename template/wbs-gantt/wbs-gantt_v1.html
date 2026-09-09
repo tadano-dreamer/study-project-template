@@ -117,6 +117,7 @@
   .clist{padding:0 clamp(14px,2vw,20px) 12px}
   .cmt{border-top:1px solid var(--line);padding:12px 0}
   .cmt:first-child{border-top:none}
+  .cmt code{background:var(--chip,#eef1f6);padding:1px 5px;border-radius:4px;font-size:.92em}
   .cmt .c-head{display:flex;align-items:center;gap:9px;margin-bottom:4px}
   .cmt .c-date{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--accent)}
   .cmt .c-tag{font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
@@ -393,10 +394,15 @@ document.getElementById("kpis").innerHTML=`
  <div class="kpi ${verdict.c==="bad"?"k-bad":verdict.c==="warn"?"k-warn":"k-ok"}"><div class="k-label">総合判定</div><div class="k-val"><span class="pill ${verdict.c}">${verdict.t}</span></div><div class="k-note">${VERDICT_NOTE}</div></div>`;
 
 /* ===== コメントログ ===== */
+/* コメント本文は **太字** と `コード` だけ描画する。
+   必ず esc() を先に通すので、本文に HTML を書かれても注入にならない。 */
+const rich=t=>esc(t)
+  .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+  .replace(/`([^`]+)`/g,"<code>$1</code>");
 const latest=COMMENTS.filter(c=>c.latest), older=COMMENTS.filter(c=>!c.latest);
 const cmtHTML=c=>`<div class="cmt${c.latest?"":" old"}">
     <div class="c-head"><span class="c-date">${esc(c.date)}</span><span class="c-tag">${esc(c.tag)}</span></div>
-    <p>${esc(c.body)}</p></div>`;
+    <p>${rich(c.body)}</p></div>`;
 let logHTML=latest.map(cmtHTML).join("");
 if(older.length){
   logHTML+=`<details class="oldwrap"><summary><span class="o-title">過去のコメント (${older.length}件)</span><span class="caret">▸</span></summary>
