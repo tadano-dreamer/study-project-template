@@ -5,12 +5,16 @@
     python tally.py                  # 最新周回のサマリ
     python tally.py --round 2        # 周回を指定
     python tally.py --compare 1 2    # 周回比較(逆行率・転換率)
-    python tally.py --drill          # recall-drill 用の優先復習リストだけ出す
+    python tally.py --drill          # 直前の教材の材料（全周回＋一問一答の記録から、まだ直っていないものだけ）
+    python tally.py --drill --round 2   # その周回だけの優先復習リスト
     python tally.py --detail         # 大問別の明細も出す
+    python tally.py --next 10        # 次に出す問題（全周回＋類題＋暗記カード）
+    python tally.py --next 10 --kind 暗記   # 種類で絞る（類題 / 暗記 / 演習）
 
 前提ファイル (同じフォルダ):
-    questions.tsv        問題マスタ。id / 分野 / 型 / 正解 / 出典 / メモ
-    rounds/round<N>/**/*.md  解答ノート。人がタップするのはここだけ
+    questions.tsv        問題マスタ。id / 分野 / 型 / 正解 / 出典 / メモ / 元問題
+                         元問題 = 類題が、どの問題の誤解を直すものか（例 1-01-1）
+    rounds/round<N>/**/*.md  解答ノート。人がタップするのはここと手書きページだけ
 
 ★設計上の要点 (E資格 16週間の反省より):
   1. **正誤は自動判定**する。人がタップするのは「選んだ肢」と「🤔自信なし」だけ。
@@ -179,7 +183,9 @@ def report(n, questions, detail=False):
     if not files:
         sys.exit(f"{n}周目の解答ノートが見つかりません: {ROUNDS_DIR}/round{n}/")
     rows = collect(rnd, questions)
-    total, att = len(questions), len(rows)
+    # 分母はこの周回の解答ノートに載っている問題数（問題マスタ全体ではない）。
+    # マスタには他の周回の問題や解釈ノートの一問一答も入るので、全体で割ると着手率が崩れる
+    total, att = sum(1 for qid in rnd if qid in questions), len(rows)
     cor = sum(1 for r in rows if r[3])
 
     print(f"# {n}周目 集計\n")
@@ -331,6 +337,90 @@ def drill_list(n, questions, limit=30):
         print(f"- {quad} `{qid}` {q.get('分野', '')} {q.get('メモ', '')} {note}")
 
 
+def remaining_weak(questions):
+    """全周回と一問一答の記録をまとめ、「まだ直っていないもの」だけを返す（直前の教材の材料）。
+
+    -> {"wrong":  [(id, q, 象限, 周回, 選んだ肢, 逆行か)]   一番新しい記録が不正解の問題
+        "lucky":  [(id, q, 周回)]                          一番新しい記録が 🤔 つきの正解
+        "recall": [(id, q, ミス回数, 出題回数, 最終日)]     一問一答で、直近の1回を落とした問い
+        "field_rate": {分野: 正答率}}                       一番新しい記録で数えた分野別の正答率
+
+    入れないもの: 一番新しい記録が確信ありの正解の問題／直近の1回で言えたカード。
+    演習の問題は、周回の記録だけで見る。一問一答（類題やチャットの想起テスト）で当たっても "wrong" からは外さない
+    （類題は正解で原題は誤答、が実際にあった。直ったかは、次の周回の原題で見る）。
+    ★以前の --drill は1周回しか見なかった。2周目で解き直さなかった1周目の誤答も、
+      一問一答で落とし続けている問いも出ず、直前のメモを使い捨てのスクリプトで作ることになった。
+    """
+    history = collections.defaultdict(list)
+    for n in available_rounds():
+        for qid, q, rec, correct, quad in collect(load_round(n)[0], questions):
+            history[qid].append((n, q, rec, correct, quad))
+
+    wrong, lucky = [], []
+    tally_by_field = collections.defaultdict(lambda: [0, 0])
+    for qid, recs in history.items():
+        n, q, rec, correct, quad = recs[-1]
+        field = q.get("分野") or "(未分類)"
+        tally_by_field[field][0] += 1
+        tally_by_field[field][1] += bool(correct)
+        if not correct:
+            regressed = any(r[3] for r in recs[:-1])
+            wrong.append((qid, q, quad, n, rec.get("choice"), regressed))
+        elif quad == LUCKY:
+            lucky.append((qid, q, n))
+
+    recall = []
+    for qid, h in load_recall().items():
+        q = questions.get(qid)
+        if q is None or not h or h[-1][1]:
+            continue
+        recall.append((qid, q, sum(1 for _d, ok, _u in h if not ok), len(h), h[-1][0]))
+
+    field_rate = {f: c / a for f, (a, c) in tally_by_field.items() if a}
+    return {"wrong": wrong, "lucky": lucky, "recall": recall, "field_rate": field_rate}
+
+
+def final_review(questions):
+    """--drill（周回の指定なし）: 直前の教材の材料を、弱い分野から順に出す。"""
+    weak = remaining_weak(questions)
+    rate = weak["field_rate"]
+
+    def by_weak_field(row):
+        field = row[1].get("分野") or "(未分類)"
+        return (rate.get(field, 1.0), field, row[0])
+
+    print("# 直前の教材の材料（全周回 + 一問一答の記録）\n")
+    print("> 入れてあるのは**まだ直っていないもの**だけ。一番新しい記録が確信ありの正解の問題と、")
+    print("> 直近の1回で言えたカードは入っていない。並びは、1 と 2 が正答率の低い分野から、3 が落とした回数の多い順。")
+    print("> 1 と 2 は周回の記録だけで見ている（一問一答で当たっても、原題を解き直すまでは外れない）。\n")
+    if not (weak["wrong"] or weak["lucky"] or weak["recall"]):
+        print("まだ直っていないものはありません（記録が無いか、すべて確信ありの正解）。")
+        return
+
+    print(f"## 1. 一番新しい記録で、まだ間違えている問題（{len(weak['wrong'])}問）\n")
+    for qid, q, quad, n, got, regressed in sorted(weak["wrong"], key=by_weak_field):
+        ans = (q.get("正解") or "-").strip()
+        mixup = f"（正解 `{ans}` → `{got}` を選んだ）" if got and ans not in ("-", "—") else ""
+        back = "・前の周回では正解だった" if regressed else ""
+        print(f"- {quad} `{qid}`（{n}周目{back}）{q.get('分野', '')} {q.get('メモ', '')} {mixup}")
+
+    if not weak["wrong"]:
+        print("（なし）")
+
+    print(f"\n## 2. 自信なく当たった問題（{len(weak['lucky'])}問）— 根拠を言えるようにする\n")
+    for qid, q, n in sorted(weak["lucky"], key=by_weak_field):
+        print(f"- {LUCKY} `{qid}`（{n}周目）{q.get('分野', '')} {q.get('メモ', '')}")
+    if not weak["lucky"]:
+        print("（なし）")
+
+    print(f"\n## 3. 一問一答で、直近の1回を落とした問い（{len(weak['recall'])}問）\n")
+    for qid, q, miss, cnt, last in sorted(weak["recall"], key=lambda r: (-r[2], by_weak_field(r))):
+        print(f"- `{qid}`（{kind_of(q)}）{q.get('分野', '')} {q.get('メモ', '')}"
+              f" … {cnt}回のうち{miss}回落とした・最後は {last}")
+    if not weak["recall"]:
+        print("（なし）")
+
+
 
 # ------------------------------------------------- 想起テスト履歴 (recall-drill)
 def load_recall():
@@ -366,7 +456,74 @@ def load_recall():
     return hist
 
 
-def next_queue(n, questions, limit=20, today=None):
+SEVERITY = {WRONG_BELIEF: 0, LUCKY: 1, UNLEARNED: 2, FIXED: 3}
+
+# 一問一答の種類（形の正本は project-plan.md §4「一問一答の形」）
+KINDS = ("類題", "暗記", "演習")
+
+
+def kind_of(q):
+    """問題マスタの1行 -> "暗記"（暗記カード）／"類題"（間違えた問題の確認）／"演習"（過去問・プレテストの原題）。
+    出典が `解釈ノート` で始まる行（ノートに付けた確認問題）も類題として扱う。"""
+    if (q.get("型") or "") == "暗記":
+        return "暗記"
+    if (q.get("出典") or "").startswith(("類題", "解釈ノート")):
+        return "類題"
+    return "演習"
+
+
+def latest_records(questions):
+    """全周回を古い順に読み、1問ごとに一番新しい着手記録を返す -> {id: (周回, q, 象限)}
+
+    ★--next が「最新周回だけ」を見ていたため、過去問1周目のファイルを置いた瞬間に
+      プレテストの🔴が出題候補から消え、候補0件になっていた（統計検定2級のプロジェクトで再現）。
+      周回ごとの正答率（report / compare）は混ぜない。混ぜるのは出題候補だけ。
+    """
+    latest = {}
+    for n in available_rounds():
+        for qid, q, _rec, _correct, quad in collect(load_round(n)[0], questions):
+            latest[qid] = (n, q, quad)
+    return latest
+
+
+def candidates(questions):
+    """出題候補 -> ([(id, q, 象限, 出どころ)], [警告])
+
+    - 周回に着手記録がある問題: 一番新しい記録の象限
+    - 着手記録が無い類題: `元問題` 列の問題の象限を引き継ぐ。
+      直したばかりの誤解を、元の問題と同じ優先度で再テストするため。
+      元問題が未着手（未回答）なら ⬜未学習
+    - 暗記カード: `元問題` を持たないので ⬜未学習から始める
+    - `元問題` が空で着手記録も無い演習の問題は出さない
+      （過去問の未着手の問題は、演習で解くものであって想起テストの対象ではない）
+    - 黙って落とさない: 元問題の id が問題マスタに無い／類題なのに元問題が空、は警告を出す
+    """
+    latest = latest_records(questions)
+    out, warns = [], []
+    for qid, (n, q, quad) in latest.items():
+        out.append((qid, q, quad, "%d周目" % n))
+    for qid, q in questions.items():
+        if qid in latest:
+            continue
+        src = [s.strip() for s in (q.get("元問題") or "").split(",") if s.strip()]
+        if not src:
+            kind = kind_of(q)
+            if kind == "暗記":
+                out.append((qid, q, UNLEARNED, "暗記カード"))
+            elif kind == "類題":
+                warns.append("`%s` は類題なのに `元問題` が空です。出題候補に入りません" % qid)
+            continue
+        unknown = [s for s in src if s not in questions]
+        if unknown:
+            warns.append("`%s` の元問題 %s が問題マスタにありません（⬜未学習として出します）"
+                         % (qid, ", ".join(unknown)))
+        quads = [latest[s][2] for s in src if s in latest]
+        quad = min(quads, key=SEVERITY.get) if quads else UNLEARNED
+        out.append((qid, q, quad, "元 " + ", ".join(src)))
+    return out, warns
+
+
+def build_queue(questions, today=None, kind=None):
     """出題キュー = 台帳の4象限 + 想起テスト履歴（間隔反復）。
 
     教材から等確率に出す道具（NotebookLM 等）に対して、ここは
@@ -374,16 +531,21 @@ def next_queue(n, questions, limit=20, today=None):
       ② 連続正解した問題は指数的に間隔を空けて寝かせ
       ③ 想起テストで落ちた問題は象限を1段昇格させる
     という個人化をかける。これが自作側の存在理由。
+
+    kind を渡すと、その種類（kind_of の値）だけに絞る（寝かせ中の数も絞った中で数える）。
+
+    -> (queue, 寝かせ中の数, 警告)。queue は優先順 [(score, -idle, id, q, 象限, 想起回数, 最終, 出どころ)]
     """
     today = today or _dt.date.today()
-    rows = collect(load_round(n)[0], questions)
+    rows, warns = candidates(questions)
+    if kind:
+        rows = [r for r in rows if kind_of(r[1]) == kind]
     hist = load_recall()
-    base = {WRONG_BELIEF: 0, LUCKY: 1, UNLEARNED: 2, FIXED: 3}
 
     queue, sleeping = [], 0
-    for qid, q, rec, _correct, quad in rows:
+    for qid, q, quad, origin in rows:
         h = hist.get(qid, [])
-        score = base[quad]
+        score = SEVERITY[quad]
 
         # 直近の想起テストで落ちていれば1段昇格（最優先へ寄せる）
         if h and not h[-1][1]:
@@ -405,19 +567,33 @@ def next_queue(n, questions, limit=20, today=None):
 
         last = h[-1][0] if h else None
         idle = (today - last).days if last else 999
-        queue.append((score, -idle, qid, q, quad, len(h), last))
+        queue.append((score, -idle, qid, q, quad, len(h), last, origin))
 
-    queue.sort(key=lambda t: (t[0], t[1]))
-    print("# 次に出す問題（%d周目の台帳 + 想起テスト履歴 / 上位%d件）\n" % (n, limit))
+    queue.sort(key=lambda t: (t[0], t[1], t[2]))
+    return queue, sleeping, warns
+
+
+def next_queue(questions, limit=20, today=None, kind=None):
+    today = today or _dt.date.today()
+    queue, sleeping, warns = build_queue(questions, today, kind)
+    what = "・%sだけ" % kind if kind else ""
+    print("# 次に出す問題（全周回の台帳 + 類題 + 暗記カード + 想起テスト履歴%s / 上位%d件）\n" % (what, limit))
     print("- 出題候補 %d 問 ｜ 間隔反復で寝かせ中 %d 問 ｜ 基準日 %s\n"
           % (len(queue), sleeping, today))
-    print("| 優先 | id | 分野 | 象限 | 想起回数 | 最終 | メモ |")
-    print("|---|---|---|---|---|---|---|")
-    for i, (_s, _idle, qid, q, quad, cnt, last) in enumerate(queue[:limit], 1):
-        print("| %d | `%s` | %s | %s | %d | %s | %s |"
-              % (i, qid, q.get("分野", ""), quad, cnt, last or "—", q.get("メモ", "")))
+    for w in warns:
+        print("> ⚠️ %s" % w)
+    if warns:
+        print()
+    print("| 優先 | id | 分野 | 象限 | 出どころ | 想起回数 | 最終 | メモ |")
+    print("|---|---|---|---|---|---|---|---|")
+    for i, (_s, _idle, qid, q, quad, cnt, last, origin) in enumerate(queue[:limit], 1):
+        print("| %d | `%s` | %s | %s | %s | %d | %s | %s |"
+              % (i, qid, q.get("分野", ""), quad, origin, cnt, last or "—", q.get("メモ", "")))
     if not queue:
-        print("\n> 出題候補がありません（全問が間隔反復の待機中）。次の復習日まで空けてよい状態です。")
+        if sleeping:
+            print("\n> 出題候補がありません（全問が間隔反復の待機中）。次の復習日まで空けてよい状態です。")
+        else:
+            print("\n> 出題候補がありません。どの周回にも着手記録が無く、`元問題` を持つ類題も暗記カードもありません。")
 
 
 def recall_summary():
@@ -460,10 +636,12 @@ def main():
     ap = argparse.ArgumentParser(description="演習台帳の集計")
     ap.add_argument("--round", type=int, help="集計する周回 (既定=最新)")
     ap.add_argument("--compare", nargs=2, type=int, metavar=("A", "B"), help="周回比較")
-    ap.add_argument("--drill", action="store_true", help="優先復習リストだけ出す")
+    ap.add_argument("--drill", action="store_true",
+                    help="直前の教材の材料(全周回＋一問一答の記録)。--round を付けるとその周回だけの優先復習リスト")
     ap.add_argument("--detail", action="store_true", help="大問別の明細も出す")
     ap.add_argument("--next", type=int, nargs="?", const=20, metavar="N",
-                    help="次に出す問題のキュー(想起テスト履歴と間隔反復を加味)")
+                    help="次に出す問題のキュー(全周回＋類題＋暗記カード。想起テスト履歴と間隔反復を加味)")
+    ap.add_argument("--kind", choices=KINDS, help="--next を種類で絞る")
     ap.add_argument("--recall", action="store_true", help="想起テストの通算成績")
     args = ap.parse_args()
 
@@ -478,11 +656,19 @@ def main():
     if args.compare:
         compare(args.compare[0], args.compare[1], questions)
         return
+    if args.kind and args.next is None:
+        print("> --kind は --next と一緒に使います（今回は無視しました）。\n")
+    if args.next is not None:
+        # --next は全周回をまとめて見る（周回を1つに絞ると、新しい周回を置いた瞬間に候補が消える）
+        if args.round is not None:
+            print("> --next は全周回を見るので --round は使いません。\n")
+        next_queue(questions, limit=args.next, kind=args.kind)
+        return
+    if args.drill and args.round is None:
+        final_review(questions)           # 周回を指定しなければ、全周回と一問一答の記録をまとめる
+        return
     # 注意: --round 0 (プレテスト) は 0 が偽値なので `or` で書くと最新周回に落ちる。
     n = args.round if args.round is not None else rounds[-1]
-    if args.next:
-        next_queue(n, questions, limit=args.next)
-        return
     if args.drill:
         drill_list(n, questions)
         return
