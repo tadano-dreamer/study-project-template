@@ -1,0 +1,104 @@
+/* 最終確認ノートの見た目。A4 縦1枚 = 1トピック。色は materials/図解/ の SVG と同じ系統 */
+@page { size: 210mm 297mm; margin: 0; }
+:root {
+  --ink: #1d2433; --sub: #5b6475; --bg: #fbfaf7; --line: #e2ded4; --card: #ffffff;
+  --blue: #1d4ed8; --blue-l: #e8eeff; --blue-m: #dbe6ff;
+  --red: #b42318;  --red-l: #fdecea;
+  --org: #c2410c;  --org-l: #fff4e5; --org-m: #fdba74;
+  --grn: #0f766e;  --grn-l: #e3f1ee;
+  --pur: #6d28d9;  --pur-l: #efeafd;
+  --gry: #eeece6;  --gry-d: #c9c5bb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #9a978f; }
+body {
+  font-family: 'BIZ UDPGothic', 'Yu Gothic', 'Meiryo', sans-serif;
+  color: var(--ink); font-size: 13.2px; line-height: 1.62;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+@media screen { .page { margin: 16px auto; box-shadow: 0 2px 10px rgba(0,0,0,.25); } }
+@media print  { html, body { background: var(--bg); } }
+
+.page {
+  width: 210mm; height: 297mm; overflow: hidden; background: var(--bg);
+  padding: 24px 34px 18px; break-after: page; page-break-after: always;
+  display: flex; flex-direction: column; gap: 9px; position: relative;
+}
+.page > * { flex-shrink: 0; }
+.page .foot {
+  position: absolute; bottom: 8px; right: 34px; font-size: 10px; color: var(--sub);
+}
+
+/* 見出し */
+.meta { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--sub); }
+.meta .no { font-size: 13px; font-weight: 800; color: #fff; background: var(--ink);
+  border-radius: 6px; padding: 1px 9px; letter-spacing: .04em; }
+.meta .rep { margin-left: auto; color: var(--red); font-weight: 700; }
+h1 { font-size: 22px; line-height: 1.35; font-weight: 800; margin-top: 2px; }
+.one { background: var(--org-l); border-left: 5px solid var(--org); border-radius: 6px;
+  padding: 7px 12px; font-size: 14.2px; font-weight: 700; line-height: 1.55; }
+.one .lbl { color: var(--org); margin-right: 6px; }
+
+h2 { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+h2::before { content: ""; width: 4px; height: 17px; background: var(--ink); display: inline-block; }
+h2 .s { font-size: 11.5px; font-weight: 500; color: var(--sub); }
+
+/* 中身 */
+.body p { margin: 2px 0; }
+.body ul { margin: 2px 0 0 1.15em; }
+.body li { margin: 1px 0; }
+.body li::marker { color: var(--sub); }
+.k { font-weight: 800; }
+.hl { background: #fef1c4; border-radius: 3px; padding: 0 2px; font-weight: 700; }
+.note { color: var(--sub); font-size: 12px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+
+/* 式 */
+.fx { display: inline-block; background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  padding: 2px 9px; margin: 1px 0; font-weight: 700; }
+.fxb { display: block; background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 12px; margin: 4px 0; font-weight: 600; }
+.fr { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center;
+  font-size: .9em; margin: 0 2px; line-height: 1.2; }
+.fr > span:first-child { border-bottom: 1.2px solid currentColor; padding: 0 3px 1px; }
+.fr > span:last-child { padding: 1px 3px 0; }
+.rt { white-space: nowrap; }
+.rt > span { border-top: 1.2px solid currentColor; padding: 0 2px; margin-left: 1px; }
+i { font-family: 'Cambria', 'Times New Roman', serif; font-style: italic; font-size: 1.06em; }
+sub, sup { font-size: .72em; line-height: 0; }
+
+/* 図 */
+.fig { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.fig svg { display: block; width: 100%; height: auto; font-family: 'BIZ UDPGothic', 'Yu Gothic', sans-serif; }
+/* 本文の書体は可変フォントにしない（Noto Sans JP の可変フォントは PDF で Type3 になり、iPad での表示が不安定になりうる） */
+
+/* 取り違え・出題 */
+.duo { display: grid; grid-template-columns: 1.08fr 1fr; gap: 12px; }
+.box { border-radius: 10px; padding: 9px 12px 8px; }
+.box h3 { font-size: 14px; font-weight: 800; margin-bottom: 4px; }
+.mis { background: var(--red-l); }
+.mis h3 { color: var(--red); }
+.exam { background: var(--blue-l); }
+.exam h3 { color: var(--blue); }
+.mis .it { margin-bottom: 5px; font-size: 12.4px; line-height: 1.5; }
+.mis .x { color: #7a1a12; }
+.mis .x::before { content: "✗ "; font-weight: 800; color: var(--red); }
+.mis .o { padding-left: 1.1em; }
+/* あとから足した取り違えに付ける日付の印（例: <span class="d">10/10</span>。直前の通し演習で落とした所など） */
+.d { display: inline-block; font-size: 10px; font-weight: 800; color: #fff; background: var(--red);
+     border-radius: 3px; padding: 0 4px; margin-right: 4px; line-height: 1.45; vertical-align: 1px; }
+.mis .o::before { content: "→ "; font-weight: 800; color: var(--grn); margin-left: -1.1em; }
+.exam ul { list-style: none; }
+.exam li { margin-bottom: 5px; font-size: 12.4px; line-height: 1.5; padding-left: 1.05em; text-indent: -1.05em; }
+.exam li::before { content: "▸ "; color: var(--blue); font-weight: 800; }
+.exam .tip { color: var(--blue); font-weight: 700; }
+
+/* 表紙 */
+.cover h1 { font-size: 30px; margin-top: 18px; }
+.cover .lead { font-size: 14px; color: var(--sub); }
+table.toc { width: 100%; border-collapse: collapse; font-size: 12.6px; background: #fff; }
+table.toc th, table.toc td { border-bottom: 1px solid var(--line); padding: 4.5px 8px; text-align: left; vertical-align: top; }
+table.toc th { background: var(--gry); font-size: 11.5px; color: var(--sub); }
+table.toc td.n { font-weight: 800; width: 30px; }
+table.toc td.r { color: var(--red); font-weight: 700; white-space: nowrap; }
+table.toc td.f { color: var(--sub); white-space: nowrap; }

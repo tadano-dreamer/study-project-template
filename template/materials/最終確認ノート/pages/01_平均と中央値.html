@@ -1,0 +1,48 @@
+<section class="page">
+  <div class="meta"><span class="no">01</span><span>基礎</span><span class="rep">★★★ 演習で2周とも ✗ ・ 一問一答で3回 ✗</span></div>
+  <h1>平均と中央値 ― 端の値に引っ張られるのは平均</h1>
+  <p class="one"><span class="lbl">ひとことで</span>平均 ＝ 合計 ÷ 個数。中央値 ＝ 大きさの順に並べた真ん中。飛び抜けた値があると、平均だけがそちらへ動く。</p>
+
+  <h2>中身</h2>
+  <div class="body">
+    <ul>
+      <li><span class="k">平均</span> <span class="fx"><span class="fr"><span>全部の値の合計</span><span>個数</span></span></span>: 全部の値を使うので、端の値が1つ変わるだけで動く。</li>
+      <li><span class="k">中央値</span>: 大きさの順に並べた真ん中の値。偶数個なら、真ん中の2つの平均。<b>真ん中より外の値をいくら変えても動かない</b>。</li>
+      <li><span class="k">裾と大小</span>: 右に裾が長い（大きい値がまばらにある）と <span class="hl">平均 ＞ 中央値</span>。左に裾が長いと逆。</li>
+    </ul>
+  </div>
+
+  <h2>図で見る <span class="s">データ 1, 2, 3, 4, 100</span></h2>
+  <div class="fig">
+    <svg viewBox="0 0 720 150">
+      <line x1="40" y1="90" x2="690" y2="90" stroke="#1d2433" stroke-width="1.2"/>
+      <g fill="#1d4ed8">
+        <circle cx="46" cy="90" r="3.5"/><circle cx="53" cy="90" r="3.5"/><circle cx="59" cy="90" r="3.5"/><circle cx="66" cy="90" r="3.5"/>
+        <circle cx="680" cy="90" r="3.5"/>
+      </g>
+      <text x="56" y="118" font-size="11" fill="#1d2433" text-anchor="middle">1〜4</text>
+      <text x="680" y="118" font-size="11" fill="#1d2433" text-anchor="middle">100</text>
+      <line x1="59" y1="40" x2="59" y2="84" stroke="#0f766e" stroke-width="2"/>
+      <text x="65" y="36" font-size="12" font-weight="800" fill="#0f766e">中央値 3（動かない）</text>
+      <line x1="181" y1="56" x2="181" y2="88" stroke="#b42318" stroke-width="2"/>
+      <text x="187" y="62" font-size="12" font-weight="800" fill="#b42318">平均 22（100 に引っ張られた）</text>
+      <text x="40" y="142" font-size="10.5" fill="#5b6475">100 を 1000 に変えると: 平均は 202 へ、中央値は 3 のまま</text>
+    </svg>
+  </div>
+
+  <div class="duo">
+    <div class="box mis">
+      <h3>あなたの取り違え</h3>
+      <div class="it"><p class="x">平均を聞かれて、真ん中の値を答えた（演習1周目・2周目）</p><p class="o">「平均」と読んだら、まず合計を出す。真ん中は中央値。</p></div>
+      <div class="it"><p class="x">端の値を大きくすると中央値も大きくなる、を正しいとした（一問一答で3回）</p><p class="o">中央値は真ん中の値だけで決まる。動くのは平均。</p></div>
+    </div>
+    <div class="box exam">
+      <h3>こう出題される</h3>
+      <ul>
+        <li>記述の正誤（「誤っているもの」を選ぶ形が多い）。<span class="tip">選ぶ前に、設問が正誤のどちらを聞いているかを見る。</span></li>
+        <li>ヒストグラムの形から、平均と中央値の大小を選ぶ。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">最終確認ノート {{PAGE}}</div>
+</section>
